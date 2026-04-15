@@ -2,32 +2,40 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict
 from collections import defaultdict
-
+import csv
 
 app = FastAPI()
 
-# ---- Example of Database ----
+# ---- Load recipes from CSV instead of hardcoded list ----
+def load_recipes_from_csv(file_path="13k-recipes.csv"):
+    recipes = []
+    try:
+        with open(file_path, "r", newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            for idx, row in enumerate(reader, start=1):
+                ingredients_str = row["Ingredients"]
+                ingredients_str = ingredients_str.strip("[]")
+                ingredients_list = [i.strip().strip("'") for i in ingredients_str.split("', '")]
+                
+                recipes.append({
+                    "id": idx,
+                    "name": row["Title"],
+                    "ingredients": ingredients_list
+                })
+    except FileNotFoundError:
+        print(f"Error: {file_path} not found. Using fallback recipes.")
+        return get_fallback_recipes()
+    return recipes
 
-RECIPES = [
-    {
-        "id":1,
-        "name": "Chicken Fried Rice",
-        "ingredients": ["Chicken Thighs", "Soy Sauce", "Sugar", "Aromatic",
-                        "Aromatics", "Rice", "Vegetables"]
-    },
-    {
-        "id":2,
-        "name":"Omelette",
-        "ingredients": ["Eggs", "Butter", "Salt and Pepper", "Cheese", "Onions", "Spinach",
-                        "Bell Peppers"]
+def get_fallback_recipes():
+    """Fallback recipes if CSV file isn't found"""
+    return [
+        {"id": 1, "name": "Chicken Fried Rice", "ingredients": ["Chicken Thighs", "Soy Sauce", "Sugar", "Aromatic", "Aromatics", "Rice", "Vegetables"]},
+        {"id": 2, "name": "Omelette", "ingredients": ["Eggs", "Butter", "Salt and Pepper", "Cheese", "Onions", "Spinach", "Bell Peppers"]},
+        {"id": 3, "name": "Grilled Cheese Sandwich", "ingredients": ["Bread", "Cheese", "Butter"]}
+    ]
 
-    },
-    {
-        "id":3,
-        "name": "Grilled Cheese Sandwich",
-        "ingredients": ["Bread", "Cheese", "Butter"]
-    }
-]
+RECIPES = load_recipes_from_csv()
 
 class IngredientInput(BaseModel):
     ingredients: List[str]
