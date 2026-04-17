@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignCenter)
 
         # ---- Authors ----
-        author = QLabel("Developers: Jose Polanco, Vitalli Protsenko, Bryan Nguyen ", self)
+        author = QLabel("Developers: Jose Polanco, Brian Nguyen,Vitalli Protsenko ", self)
         author.setFont(QFont("Times New Roman", 10))
         author.setGeometry(0, 30, 700, 100)
         author.setAlignment(Qt.AlignCenter)
