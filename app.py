@@ -17,6 +17,8 @@ def get_recipes():
 
     if not ingredients:
         return jsonify({"Error": "No ingredients provided."}), 400
+    if not API_KEY:
+        return jsonify({"Error": "Missing Spoonacular API key."}), 500
 
     params = {
         "ingredients": ingredients,
@@ -29,8 +31,10 @@ def get_recipes():
     try:
         response = requests.get(BASE_URL, params=params)
         response.raise_for_status()
-        recipes = response.json()
-        return jsonify(recipes)
+# ---- Making Changes on 04/25/26 -----
+        # recipes = response.json()
+        # return jsonify(recipes)
+        return jsonify(response.json())
 
     except requests.exceptions.RequestException as e:
         return jsonify({"Error": str(e)}), 500
