@@ -4,9 +4,44 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QWidget, QHBoxLa
                              QPushButton, QLineEdit, QListWidget, QTextEdit, QScrollArea,
                              QFrame, QMessageBox, QSplitter)
 from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import csv
 from collections import defaultdict
+
+
+# ---- Adding Worker Thread that calls Flask/Spoonacular in the background then sends results back to UI ----
+
+
+class RecipeWorker(QThread):
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, ingredients):
+        super().__init__()
+        self.ingredients = ingredients
+
+    def run(self):
+        try:
+            response = requests.get(
+                "http://127.0.0.1:5000/recipes",
+                params={"ingredients": self.ingredients},
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                self.error.emit(f"API Error: {response.text}")
+                return
+
+            recipes = response.json()
+            self.finished.emit(recipes)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+# ---- Class Implementing QThread made ---- DONE
+
+
+
 
 
 class RecipeBookWindow(QMainWindow):
@@ -191,6 +226,8 @@ class MainWindow(QMainWindow):
         self.lowCarbsButton = QPushButton("🥗 Low Carbs")
         self.vegetarianButton = QPushButton("🥬 Vegetarian")
 
+
+
         for btn in [self.proteinButton, self.glutenFreeButton, self.lowCarbsButton, self.vegetarianButton]:
             btn.setCheckable(True)
             btn.setStyleSheet(
@@ -244,12 +281,13 @@ class MainWindow(QMainWindow):
         self.resultsText.setStyleSheet("font-family: Consolas; font-size: 11px;")
         main_layout.addWidget(self.resultsText)
 
+        # ---- Adding Button to Find Recipes  (04/25/26) ----
         # Find recipe button at bottom
-        find_big = QPushButton("🔍 FIND RECIPES WITH THESE INGREDIENTS 🔍")
-        find_big.clicked.connect(self.findRecipe)
-        find_big.setMinimumHeight(50)
-        find_big.setStyleSheet("background-color: #ff9800; color: white; font-size: 14px; font-weight: bold;")
-        main_layout.addWidget(find_big)
+        self.findBigButton = QPushButton("🔍 FIND RECIPES WITH THESE INGREDIENTS 🔍")
+        self.findBigButton.clicked.connect(self.findRecipe)
+        self.findBigButton.setMinimumHeight(50)
+        self.findBigButton.setStyleSheet("background-color: #ff9800; color: white; font-size: 14px; font-weight: bold;")
+        main_layout.addWidget(self.findBigButton)
 
     def loadRecipes(self):
         """Load recipes from CSV"""
@@ -299,108 +337,65 @@ class MainWindow(QMainWindow):
 
 
         # ---- Flask API implementation ----
-        try:
-            ingredients_str = ",".join(self.inputIngredients)
+        ingredients_str = ",".join(self.inputIngredients)
 
-            response = requests.get(
-                "http://127.0.0.1:5000/recipes",
-                params={"ingredients": ingredients_str}
-            )
+        self.resultsText.clear()
+        self.resultsText.append("⌛ Fetching recipes...")
 
-            if response.status_code != 200:
-                QMessageBox.warning(self, "Error", f"API Error: {response.text}")
-                return
 
-            recipes = response.json()
+        # ---- Changed BigButton 4/25/26 -----
+        self.findRecipeButton.setEnabled(False)
+        self.findBigButton.setEnabled(False)
 
-        # ---- Displaying Results ----
-            self.resultsText.clear()
-            self.resultsText.append("=" * 60)
-            self.resultsText.append(f"📦 INGREDIENTS: {ingredients_str}")
-            self.resultsText.append("=" * 60)
+        self.worker = RecipeWorker(ingredients_str)
+        self.worker.finished.connect(lambda recipes: self.displayApiResults(recipes, ingredients_str))
+        self.worker.error.connect(self.displayApiError)
+        self.worker.start()
 
-            if not recipes:
-                self.resultsText.append("\n ❌ No recipes found. \n")
-                return
 
+    def displayApiResults(self, recipes, ingredients_str):
+        self.resultsText.clear()
+        self.resultsText.append("=" * 60)
+        self.resultsText.append(f"📦 INGREDIENTS: {ingredients_str}")
+        self.resultsText.append("=" * 60)
+
+
+        if not recipes:
+            self.resultsText.append("\n ❌ No recipes found. \n")
+            return
+        else:
             for recipe in recipes:
                 self.resultsText.append(f"\n 🍽 {recipe.get('title', 'No Title')}")
-                self.resultsText.append(f"   ✅ Used Ingredients: {recipe.get('usedIngredientCount', 0)}")
-                self.resultsText.append(f"   ❌ Missing Ingredients: {recipe.get('missedIngredientCount', 0)}")
+                self.resultsText.append(f" ✅ Used Ingredients: {recipe.get('usedIngredientCount', 0)}")
+                self.resultsText.append(f" ❌ Missing Ingredients: {recipe.get('missedIngredientCount', 0)}")
 
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to fetch recipes: \n {str(e)}")
+                missed = recipe.get("missedIngredients", [])
 
-
-        # ---- Flask + API + Interface Changes ----- DONE
-
-# ---- Commented Out this code to see how the interface interacts with the API ----
-
-
-
-        # user_ingredients = set(i.strip().lower() for i in self.inputIngredients)
-        #
-        # complete_recipes = []
-        # partial_recipes = []
-        # grocery_suggestions = defaultdict(int)
-        #
-        # for recipe in self.recipes:
-        #     recipe_ingredients = set(i.strip().lower() for i in recipe["ingredients"])
-        #
-        #     matches = recipe_ingredients & user_ingredients
-        #     missing = recipe_ingredients - user_ingredients
-        #
-        #     result = {
-        #         "name": recipe["name"],
-        #         "matches": list(matches),
-        #         "missing": list(missing),
-        #         "match_count": len(matches),
-        #         "missing_count": len(missing)
-        #     }
-        #
-        #     if result["missing_count"] == 0:
-        #         complete_recipes.append(result)
-        #     elif result["missing_count"] <= 3:
-        #         partial_recipes.append(result)
-        #         for item in result["missing"]:
-        #             grocery_suggestions[item] += 1
-        #
-        # # Display results
-        # self.resultsText.clear()
-        #
-        # # Show user's ingredients
-        # self.resultsText.append("=" * 60)
-        # self.resultsText.append(f"📦 YOUR INGREDIENTS: {', '.join(user_ingredients)}")
-        # self.resultsText.append("=" * 60)
-        #
-        # # Complete recipes
-        # self.resultsText.append("\n✅ COMPLETE RECIPES (You have everything!):\n")
-        # if complete_recipes:
-        #     for recipe in complete_recipes:
-        #         self.resultsText.append(f"• {recipe['name']}")
-        # else:
-        #     self.resultsText.append("  None found. Try adding more ingredients!\n")
-        #
-        # # Partial recipes
-        # self.resultsText.append("\n🟡 ALMOST COMPLETE RECIPES (Missing 1-3 ingredients):\n")
-        # if partial_recipes:
-        #     partial_recipes.sort(key=lambda x: x["missing_count"])
-        #     for recipe in partial_recipes[:5]:  # Show top 5
-        #         self.resultsText.append(f"\n📖 {recipe['name']}")
-        #         self.resultsText.append(f"   ✅ You have: {', '.join(recipe['matches'][:5])}")
-        #         self.resultsText.append(f"   ❌ Need: {', '.join(recipe['missing'])}")
-        # else:
-        #     self.resultsText.append("  None found.\n")
-        #
-        # # Shopping suggestions
-        # if grocery_suggestions:
-        #     self.resultsText.append("\n🛒 SUGGESTED GROCERY ITEMS:\n")
-        #     sorted_items = sorted(grocery_suggestions.items(), key=lambda x: x[1], reverse=True)[:10]
-        #     for item, count in sorted_items:
-        #         self.resultsText.append(f"  • {item} (appears in {count} recipes)")
+                if missed:
+                    self.resultsText.append("🛒 Ingredients to buy: ")
+                    for item in missed:
+                        self.resultsText.append(f"     * {item.get('name', 'Unknown ingredient')}")
+                else:
+                    self.resultsText.append("🎉 You have all the ingredients!")
 
 
-# ---- END of commented out code ----
+        # ---- Added bottom two lines to enable buttons after response ----
+        # ---- 4/25/26 ----
+        self.findRecipeButton.setEnabled(True)
+        self.findBigButton.setEnabled(True)
+
+    def displayApiError(self, error_message):
+        # ---- Added bottom two lines to enable buttons after response ----
+        # ---- 4/25/26 ----
+        self.findRecipeButton.setEnabled(True)
+        self.findBigButton.setEnabled(True)
+
+        QMessageBox.warning(self, "Error", f"Failed to fetch recipes: \n{error_message}")
+
+    # ---- Changes made to connect flask and Interface with QThread library ----
+
+
+
 
     def openRecipeBook(self):
         """Open the recipe book window"""
